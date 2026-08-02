@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+:root {
+  --nes-black: #050a14;
+  --nes-blue: #1a3f8f;
+  --nes-blue-light: #4d83ce;
+  --nes-cream: #fff1bf;
+  --nes-gold: #e1aa3d;
+  --nes-red: #a93c42;
+  --nes-shadow: #071c47;
+  --nes-white: #fffbe5;
+  background: var(--nes-black);
+  color: var(--nes-white);
+  font-family: 'Press Start 2P', 'Courier New', monospace;
+  font-synthesis: none;
+  text-rendering: optimizeSpeed;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button {
+  font: inherit;
+}
