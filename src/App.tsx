@@ -11,7 +11,7 @@ function App() {
     return (
       <main className="app-shell app-shell--centered" aria-live="polite">
         <div className="loader" aria-hidden="true" />
-        <p className="status-copy">Reading the elements...</p>
+        <p className="status-copy">Reading game data...</p>
       </main>
     )
   }

@@ -42,11 +42,11 @@ export function TitleScreen({ saves, isOpening, onSelect }: TitleScreenProps) {
         <div className="corner-pixel corner-pixel--top-right" aria-hidden="true" />
 
         <header className="brand-lockup">
-          <p className="title-kicker">A tale of virtue and balance</p>
+          <p className="title-kicker">A tale of craft and courage</p>
           <h1 className="brand">
             Ele<span>MENTAL</span>
           </h1>
-          <p className="tagline">Quest of the four elements</p>
+          <p className="tagline">Brew. Prepare. Descend.</p>
         </header>
 
         <section className="file-panel pixel-panel" aria-labelledby="save-slots-title">
@@ -94,7 +94,7 @@ export function TitleScreen({ saves, isOpening, onSelect }: TitleScreenProps) {
           </p>
         </section>
 
-        <div className="party-strip" aria-label="The four adventurers">
+        <div className="party-strip" aria-label="Adventurer classes">
           {PARTY_SPRITES.map((character) => (
             <figure key={character.name}>
               <div className="sprite-frame">

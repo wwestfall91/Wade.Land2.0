@@ -1,25 +1,43 @@
 # EleMENTAL
 
-A responsive React and TypeScript starter for a story-driven game. XState coordinates the
-application flow, Zustand holds the active game session, and Dexie persists three save slots in
-IndexedDB.
+EleMENTAL is a pixel-art dungeon auto-battler about discovering potions, preparing a party, and
+surviving increasingly dangerous fights. React renders the game, XState coordinates the title/game
+flow, and Dexie persists three local save slots.
 
-## Visual direction
+## Prototype loop
 
-EleMENTAL uses a consistent late-1980s NES RPG language inspired by the sparse console presentation
-of *Ultima IV*: a 4:3 playfield, limited navy/gold/cream palette, bitmap typography, square
-double-line panels, hard pixel shadows, and compact party sprites.
+1. Buy from five rotating ingredient offers.
+2. Combine exactly two ingredients at the Brewing Station.
+3. Discover explicit recipes and Quick Brew them from the Recipe Book.
+4. Sell potions to learn their value or give them to party members for permanent benefits.
+5. Arrange up to five formation slots; the rightmost occupied slot is the frontline.
+6. Fight an automatic battle, claim enemy-specific ingredients and Gold, then return to a freely
+   refreshed shop.
 
-- Reuse the `--nes-*` color tokens in `src/index.css`; do not introduce gradients or soft modern
-  colors outside the established palette.
-- Use `Press Start 2P` with uppercase, concise copy and generous line height.
-- Keep panels square, high-contrast, and pixel-framed; avoid rounded cards, blur, and soft shadows.
-- Render sprites with `image-rendering: pixelated` and scale them by whole-feeling increments.
-- Show selection with the gold cursor, color inversion, and a strong keyboard focus treatment.
+The former Hot, Cold, Wet, and Dry model, customer commissions, Fire fuel, and Glass Vials are not
+part of this version.
+
+## Editable game data
+
+`public/data/EleMENTAL Game Data.xlsx` is the runtime source of truth. The game checks it for changes
+every 1.5 seconds. Edit it in desktop Excel while the development server is running.
+
+| Sheet | Required columns |
+| --- | --- |
+| Ingredients | `Name`, `Description`, `Gold` |
+| Potions | `Potion Name`, `Ingredient 1`, `Ingredient 2`, `Description`, `Benefit`, `Benefit Type`, `Benefit Value`, `Sale Gold` |
+| Classes | `Class Name`, `Description`, `Passive` |
+| Enemies | `Enemy Name`, `Health`, `Attack`, `Gold`, `Drop Ingredient` |
+
+Potion ingredient order does not matter. Supported benefit types are `heal`, `attack`, `max-health`,
+`speed`, and `luck`. Ingredient names in Potions and Enemies must match the Ingredients sheet.
+
+Add ingredient art to `src/assets/sprites/items/`. The filename stem must exactly match the
+ingredient name, case-insensitively.
 
 ## Commands
 
-- `npm run dev` — start the Vite development server
-- `npm test` — run focused component and persistence tests
-- `npm run build` — type-check and build for production
+- `npm run dev` — start the development server
+- `npm test` — run tests
+- `npm run build` — type-check and build
 - `npm run lint` — run Oxlint
