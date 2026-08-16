@@ -11,25 +11,21 @@ interface ShopPanelProps {
   offers: readonly ShopOffer[]
   gold: number
   selectedOffer: number | null
-  canSell: boolean
   onSelectOffer: (index: number) => void
   onPurchase: (
     index: number,
     dropPoint?: { clientX: number; clientY: number },
   ) => void
   onRefresh: () => void
-  onSell: () => void
 }
 
 export function ShopPanel({
   offers,
   gold,
   selectedOffer,
-  canSell,
   onSelectOffer,
   onPurchase,
   onRefresh,
-  onSell,
 }: ShopPanelProps) {
   const dragOrigin = useRef<DOMRect | null>(null)
   const purchasedByDrag = useRef(false)
@@ -65,14 +61,15 @@ export function ShopPanel({
 
   return (
     <>
-      <section className="mockup-panel mockup-shop" aria-labelledby="shop-title">
+      <section className="mockup-shop" aria-labelledby="shop-title">
       <h2 id="shop-title">Shop</h2>
       <div className="mockup-shop-controls">
-        <button disabled={gold < 3} type="button" onClick={onRefresh}>
+        <button className="refresh-button" disabled={gold < 3} type="button" onClick={onRefresh}>
           Refresh
           <span className="control-price">3</span>
         </button>
         <button
+          className="buy-button"
           disabled={!selected || gold < selected.gold}
           type="button"
           onClick={() => selectedOffer !== null && onPurchase(selectedOffer)}
@@ -90,7 +87,13 @@ export function ShopPanel({
                   : 'Unavailable offer'
               }
               aria-pressed={selectedOffer === index}
-              className={draggingOffer === index ? 'mockup-offer--dragging' : ''}
+              className={[
+                ingredient?.kind === 'modifier' ? 'mockup-offer--modifier' : 'mockup-offer--base',
+                draggingOffer === index ? 'mockup-offer--dragging' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              data-tooltip={ingredient?.name ?? ''}
               disabled={!ingredient || gold < ingredient.gold}
               key={`${id}-${index}`}
               type="button"
@@ -124,15 +127,6 @@ export function ShopPanel({
             </button>
           ))}
         </div>
-        <button
-          className="mockup-sell"
-          data-sell-slot
-          disabled={!canSell}
-          type="button"
-          onClick={onSell}
-        >
-          Sell
-        </button>
       </div>
       </section>
       {draggedIngredient && dragPoint && (

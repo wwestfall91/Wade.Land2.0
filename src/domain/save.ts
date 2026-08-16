@@ -1,6 +1,6 @@
 export type SaveSlotId = 1 | 2 | 3
 
-export const CURRENT_GAMEPLAY_VERSION = 9
+export const CURRENT_GAMEPLAY_VERSION = 10
 
 export interface Position {
   x: number
@@ -30,6 +30,9 @@ export interface PartyMember {
   classId: string
   formation: number
   stats: CharacterStats
+  /** Ability ids from consumed passive potions. Capped at 2, on top of the
+   * character's class ability (which is unlimited/always active). */
+  passivePotionAbilityIds: string[]
 }
 
 export interface PendingReward {
@@ -51,7 +54,6 @@ export interface SaveRecord {
   inventory: InventoryItem[]
   party: PartyMember[]
   discoveredRecipeIds: string[]
-  knownSaleRecipeIds: string[]
   shopOffers: string[]
   battlesWon: number
   pendingReward: PendingReward | null
@@ -79,6 +81,7 @@ export const createStartingParty = (): PartyMember[] => [
     classId: 'warrior',
     formation: 4,
     stats: { maxHealth: 28, health: 28, attack: 7, magic: 1, speed: 3, luck: 2 },
+    passivePotionAbilityIds: [],
   },
   {
     id: crypto.randomUUID(),
@@ -86,6 +89,7 @@ export const createStartingParty = (): PartyMember[] => [
     classId: 'black-mage',
     formation: 3,
     stats: { maxHealth: 18, health: 18, attack: 3, magic: 8, speed: 4, luck: 3 },
+    passivePotionAbilityIds: [],
   },
   {
     id: crypto.randomUUID(),
@@ -93,5 +97,6 @@ export const createStartingParty = (): PartyMember[] => [
     classId: 'thief',
     formation: 2,
     stats: { maxHealth: 21, health: 21, attack: 5, magic: 2, speed: 8, luck: 6 },
+    passivePotionAbilityIds: [],
   },
 ]

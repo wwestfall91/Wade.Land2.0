@@ -17,6 +17,7 @@ interface PartyPanelProps {
   onFight: () => void
   onSwap: (memberId: string, formation: number) => void
   onUsePotion: (memberId: string) => void
+  onOpenInfo: (memberId: string) => void
 }
 
 export function PartyPanel({
@@ -27,6 +28,7 @@ export function PartyPanel({
   onFight,
   onSwap,
   onUsePotion,
+  onOpenInfo,
 }: PartyPanelProps) {
   return (
     <section className="mockup-panel mockup-party" aria-labelledby="party-title">
@@ -50,14 +52,15 @@ export function PartyPanel({
                   aria-label={`${member.name}: ${member.stats.health} Health, ${member.stats.attack} Attack`}
                   className={`mockup-character ${glowingMemberId === member.id ? 'mockup-character--glow' : ''}`}
                   data-member-id={member.id}
+                  data-tooltip={member.name}
                   draggable
                   type="button"
-                  onClick={() => canUsePotion && onUsePotion(member.id)}
+                  onClick={() => (canUsePotion ? onUsePotion(member.id) : onOpenInfo(member.id))}
                   onDragStart={(event) => {
                     event.dataTransfer.setData('text/member-id', member.id)
                   }}
                 >
-                  <img src={CHARACTER_SPRITES[member.classId]} alt="" draggable="false" />
+                  <img className="character-sprite" src={CHARACTER_SPRITES[member.classId]} alt="" draggable="false" />
                   <span className="character-stat character-stat--health">
                     {member.stats.health}
                   </span>

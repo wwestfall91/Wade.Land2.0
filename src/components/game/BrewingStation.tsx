@@ -1,7 +1,10 @@
 import type { InventoryItem } from '../../domain/save'
 
+type IngredientSlotState = 'No Ingredient Inserted' | 'Ingredient Inserted'
+
 interface BrewingStationProps {
   ingredients: readonly (InventoryItem | undefined)[]
+  slotStates: readonly IngredientSlotState[]
   previewName?: string
   previewKnown: boolean
   onLoadIngredient: (slot: 0 | 1) => void
@@ -10,6 +13,7 @@ interface BrewingStationProps {
 
 export function BrewingStation({
   ingredients,
+  slotStates,
   previewName,
   previewKnown,
   onLoadIngredient,
@@ -18,33 +22,34 @@ export function BrewingStation({
   const canBrew = Boolean(ingredients[0] && ingredients[1])
 
   return (
-    <section className="mockup-panel mockup-brewing" aria-labelledby="brewing-title">
-      <h2 id="brewing-title">Brewing Station</h2>
+    <section className="mockup-brewing" aria-labelledby="brewing-title">
+      <h2 id="brewing-title">Brewing</h2>
       <div className="brew-diagram">
         <div className="brew-output">
           <span className={previewKnown ? 'brew-output--known' : ''}>
             {previewKnown ? previewName : 'Out'}
           </span>
         </div>
-        <div className="brew-connectors" aria-hidden="true" />
         <div className="brew-input-row">
-          {[0, 1].map((slot) => (
-            <button
-              aria-label={
-                ingredients[slot]
-                  ? `Ingredient ${slot + 1}: ${ingredients[slot]?.name}`
-                  : `Load ingredient ${slot + 1}`
-              }
-              className="brew-input"
-              data-ingredient-slot={slot}
-              key={slot}
-              type="button"
-              onClick={() => onLoadIngredient(slot as 0 | 1)}
-            >
-              {ingredients[slot]?.name ?? slot + 1}
-            </button>
-          ))}
-          <span className="brew-modifier" title="Modifier socket — coming later">+</span>
+          {[0, 1].map((slot) => {
+            const hasIngredient = slotStates[slot] === 'Ingredient Inserted'
+            return (
+              <button
+                aria-label={
+                  ingredients[slot]
+                    ? `${slot === 0 ? 'Base' : 'Mod'} slot: ${ingredients[slot]?.name}`
+                    : `Load ${slot === 0 ? 'Base' : 'Mod'} ingredient slot`
+                }
+                className={hasIngredient ? 'brew-input brew-input--filled' : 'brew-input'}
+                data-ingredient-slot={slot}
+                data-tooltip={ingredients[slot]?.name ?? ''}
+                key={slot}
+                type="button"
+              >
+                {(slot === 0 ? 'Base' : 'Mod')}
+              </button>
+            )
+          })}
         </div>
       </div>
       <button

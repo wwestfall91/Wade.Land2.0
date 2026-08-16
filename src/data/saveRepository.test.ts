@@ -9,7 +9,6 @@ import {
   openSave,
   purchaseOffer,
   resolveBattle,
-  sellPotion,
   synchronizeGameData,
   usePotion,
 } from './saveRepository'
@@ -36,43 +35,51 @@ describe('saveRepository gameplay', () => {
     expect(purchased.shopOffers).toHaveLength(5)
   })
 
-  it('discovers, uses, and sells workbook-defined potions', async () => {
+  it('brews Base+Modifier potions, applies passive/one-time effects, and rejects invalid pairs', async () => {
     const save = {
       ...synchronizeGameData(await openSave(2), catalog),
       inventory: [
-        createInventoryItem('herb', 'Herb', 'ingredient', { x: 40, y: 75 }),
-        createInventoryItem('mushroom', 'Mushroom', 'ingredient', { x: 48, y: 75 }),
+        createInventoryItem('deathcap', 'Deathcap', 'ingredient', { x: 40, y: 75 }),
+        createInventoryItem('red-essence', 'Red Essence', 'ingredient', { x: 42, y: 75 }),
+        createInventoryItem('spider-silk', 'Spider Silk', 'ingredient', { x: 44, y: 75 }),
+        createInventoryItem('moon-blossom', 'Moon Blossom', 'ingredient', { x: 46, y: 75 }),
+        createInventoryItem('elven-hair', 'Elven Hair', 'ingredient', { x: 48, y: 75 }),
       ],
     }
-    const brewed = brewRecipe(save, catalog, [
+
+    // Base + Base is not a valid combination.
+    expect(() =>
+      brewRecipe(save, catalog, [save.inventory[0].id, save.inventory[1].id]),
+    ).toThrow('A potion needs exactly one Base ingredient and one Modifier ingredient.')
+
+    // Deathcap (base) + Spider Silk (modifier) => "-> Dies: +5 AGI", a passive ability.
+    const brewedPassive = brewRecipe(save, catalog, [
       save.inventory[0].id,
-      save.inventory[1].id,
+      save.inventory[2].id,
     ])
-    expect(brewed.discoveredRecipeIds).toContain('healing-draught')
-    expect(brewed.inventory[0]).toMatchObject({ kind: 'potion', name: 'Healing Draught' })
+    expect(brewedPassive.discoveredRecipeIds).toContain('deathcap__spider-silk')
+    const passivePotion = brewedPassive.inventory.find((item) => item.kind === 'potion')!
+    expect(passivePotion).toMatchObject({ name: 'Deathcap & Spider Silk Potion' })
 
-    const injured = {
-      ...brewed,
-      party: brewed.party.map((member, index) =>
-        index === 0
-          ? { ...member, stats: { ...member.stats, health: 10 } }
-          : member,
-      ),
-    }
-    const used = usePotion(injured, catalog, injured.inventory[0].id, injured.party[0].id)
-    expect(used.party[0].stats.health).toBe(18)
+    const memberId = brewedPassive.party[0].id
+    const learned = usePotion(brewedPassive, catalog, passivePotion.id, memberId)
+    expect(learned.party[0].passivePotionAbilityIds).toEqual(['deathcap__spider-silk'])
+    expect(learned.inventory.some((item) => item.kind === 'potion')).toBe(false)
 
-    const freshIngredients = [
-      createInventoryItem('herb', 'Herb', 'ingredient', { x: 40, y: 75 }),
-      createInventoryItem('mushroom', 'Mushroom', 'ingredient', { x: 48, y: 75 }),
-    ]
-    const brewedAgain = brewRecipe(
-      { ...used, inventory: freshIngredients },
-      catalog,
-      [freshIngredients[0].id, freshIngredients[1].id],
-    )
-    const sold = sellPotion(brewedAgain, catalog, brewedAgain.inventory[0].id)
-    expect(sold.knownSaleRecipeIds).toContain('healing-draught')
+    // Moon Blossom (base) + Elven Hair (modifier) => "Increase MAG +1", a one-time effect.
+    const brewedOneTime = brewRecipe(learned, catalog, [
+      learned.inventory.find((item) => item.definitionId === 'moon-blossom')!.id,
+      learned.inventory.find((item) => item.definitionId === 'elven-hair')!.id,
+    ])
+    const oneTimePotion = brewedOneTime.inventory.find((item) => item.kind === 'potion')!
+    const oneTimeDefinition = catalog.potion(oneTimePotion.definitionId)
+    expect(oneTimeDefinition).toMatchObject({ isPassive: false, effectText: 'Increase MAG +1' })
+
+    const beforeMagic = brewedOneTime.party[0].stats.magic
+    const consumed = usePotion(brewedOneTime, catalog, oneTimePotion.id, brewedOneTime.party[0].id)
+    expect(consumed.party[0].stats.magic).toBe(beforeMagic + 1)
+    expect(consumed.inventory.some((item) => item.kind === 'potion')).toBe(false)
+
   })
 
   it('resolves battle and converts victory into workbook rewards', async () => {
@@ -82,7 +89,7 @@ describe('saveRepository gameplay', () => {
     const finished = finishBattle(save, catalog, result)
     const claimed = claimRewards(finished, catalog)
     expect(claimed.gold).toBe(16)
-    expect(claimed.inventory[0].name).toBe('Mushroom')
+    expect(claimed.inventory[0].name).toBe('Spider Silk')
     expect(claimed.battlesWon).toBe(1)
   })
 })

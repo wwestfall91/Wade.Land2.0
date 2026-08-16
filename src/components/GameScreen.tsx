@@ -18,13 +18,13 @@ import {
   refreshShop,
   resolveBattle,
   saveGame,
-  sellPotion,
   swapFormation,
   synchronizeGameData,
   usePotion as applyPotion,
   type BattleResult,
 } from '../data/saveRepository'
 import type { InventoryItem, SaveRecord } from '../domain/save'
+import type { PotionDefinition } from '../domain/gameData'
 import { useGameData } from '../hooks/useGameData'
 import { useGameStore } from '../store/gameStore'
 import { BrewingStation } from './game/BrewingStation'
@@ -38,6 +38,7 @@ interface GameScreenProps {
 }
 
 type Scene = 'laboratory' | 'battle' | 'rewards'
+type IngredientSlotState = 'No Ingredient Inserted' | 'Ingredient Inserted'
 
 const CHARACTER_SPRITES: Record<string, string> = {
   warrior: warriorSprite,
@@ -62,11 +63,15 @@ export function GameScreen({ onReturn }: GameScreenProps) {
     null,
     null,
   ])
+  const [slotStates, setSlotStates] = useState<IngredientSlotState[]>([
+    'No Ingredient Inserted',
+    'No Ingredient Inserted',
+  ])
   const [recipeBookOpen, setRecipeBookOpen] = useState(false)
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
-  const [message, setMessage] = useState('Choose two ingredients. Discover what they become.')
   const [battleResult, setBattleResult] = useState<BattleResult | null>(null)
   const [glowingMemberId, setGlowingMemberId] = useState<string | null>(null)
+  const [infoMemberId, setInfoMemberId] = useState<string | null>(null)
 
   const commit = (next: SaveRecord) => {
     saveRef.current = next
@@ -106,10 +111,14 @@ export function GameScreen({ onReturn }: GameScreenProps) {
   const selectedRecipe = catalog?.potion(selectedRecipeId ?? '')
   const currentEnemy =
     catalog?.enemies[save.battlesWon % Math.max(catalog.enemies.length, 1)]
+  const infoMember = save.party.find((member) => member.id === infoMemberId)
+  const infoClass = catalog?.classes.find((entry) => entry.id === infoMember?.classId)
+  const infoPassives = (infoMember?.passivePotionAbilityIds ?? [])
+    .map((id) => catalog?.potion(id))
+    .filter((potion): potion is PotionDefinition => Boolean(potion))
 
   const loadIngredient = (slot: 0 | 1, item = selectedItem) => {
     if (!item || item.kind !== 'ingredient') {
-      setMessage('Potions cannot be placed in ingredient slots.')
       return
     }
     setIngredientIds((current) => {
@@ -119,8 +128,27 @@ export function GameScreen({ onReturn }: GameScreenProps) {
       next[slot] = item.id
       return next
     })
+    setSlotStates((current) => {
+      const next: IngredientSlotState[] = [...current]
+      next[slot] = 'Ingredient Inserted'
+      return next
+    })
     setSelectedId(item.id)
-    setMessage(`${item.name} loaded into ingredient slot ${slot + 1}.`)
+  }
+
+  const clearIngredientSlot = (slot: 0 | 1) => {
+    setIngredientIds((current) => {
+      const next: [string | null, string | null] = [...current]
+      if (next[slot] !== null) {
+        next[slot] = null
+      }
+      return next
+    })
+    setSlotStates((current) => {
+      const next: IngredientSlotState[] = [...current]
+      next[slot] = 'No Ingredient Inserted'
+      return next
+    })
   }
 
   const handleBrew = () => {
@@ -133,24 +161,22 @@ export function GameScreen({ onReturn }: GameScreenProps) {
       const potion = next.inventory[next.inventory.length - 1]
       commit(next)
       setIngredientIds([null, null])
+      setSlotStates(['No Ingredient Inserted', 'No Ingredient Inserted'])
       setSelectedId(potion.id)
-      setMessage(`${potion.name} brewed. Its recipe is now recorded.`)
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Brewing failed.')
+      console.log(error);
     }
   }
 
   const handleQuickBrew = (recipeId: string) => {
     const recipe = catalog?.potion(recipeId)
-    if (!recipe) return
+    if (!recipe || !catalog) return
     const ingredients = quickBrewIngredients(save, recipe)
     if (!ingredients) {
-      setMessage(`You do not have both ingredients for ${recipe.name}.`)
       return
     }
     setIngredientIds(ingredients)
     setRecipeBookOpen(false)
-    setMessage(`${recipe.name} ingredients loaded. Press BREW when ready.`)
   }
 
   const handlePurchase = (
@@ -171,9 +197,8 @@ export function GameScreen({ onReturn }: GameScreenProps) {
       commit(next)
       setSelectedOffer(null)
       setSelectedId(next.inventory[next.inventory.length - 1]?.id ?? null)
-      setMessage('Purchased. A new shop offer has arrived.')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Purchase failed.')
+      console.log(error);
     }
   }
 
@@ -181,22 +206,8 @@ export function GameScreen({ onReturn }: GameScreenProps) {
     if (!catalog) return
     try {
       commit(refreshShop(save, catalog))
-      setMessage('The shopkeeper restocked all five offers.')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Refresh failed.')
-    }
-  }
-
-  const handleSell = (item = selectedItem) => {
-    if (!catalog || item?.kind !== 'potion') return
-    try {
-      const potionName = item.name
-      const next = sellPotion(save, catalog, item.id)
-      commit(next)
-      setSelectedId(null)
-      setMessage(`${potionName} sold. Its value is now recorded in the Recipe Book.`)
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Sale failed.')
+      console.log(error);
     }
   }
 
@@ -207,9 +218,8 @@ export function GameScreen({ onReturn }: GameScreenProps) {
       setGlowingMemberId(memberId)
       window.setTimeout(() => setGlowingMemberId(null), 650)
       setSelectedId(null)
-      setMessage(`${item.name} consumed. Its benefit is permanent for this run.`)
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Potion use failed.')
+      console.log(error)
     }
   }
 
@@ -231,7 +241,6 @@ export function GameScreen({ onReturn }: GameScreenProps) {
     commit(claimRewards(save, catalog))
     setBattleResult(null)
     setScene('laboratory')
-    setMessage('Rewards claimed. The shop refreshed for free.')
   }
 
   const moveSelected = (item: InventoryItem, x: number, y: number) => {
@@ -266,6 +275,7 @@ export function GameScreen({ onReturn }: GameScreenProps) {
     if (dragRef.current?.pointerId !== event.pointerId) return
     dragRef.current = null
     event.currentTarget.releasePointerCapture?.(event.pointerId)
+
     const targets = document.elementsFromPoint(event.clientX, event.clientY)
     const ingredientSlot = targets
       .map((target) => target.closest<HTMLElement>('[data-ingredient-slot]'))
@@ -273,16 +283,34 @@ export function GameScreen({ onReturn }: GameScreenProps) {
     const memberCard = targets
       .map((target) => target.closest<HTMLElement>('[data-member-id]'))
       .find(Boolean)
-    const sellSlot = targets
-      .map((target) => target.closest<HTMLElement>('[data-sell-slot]'))
-      .find(Boolean)
+
+    const currentlyLoadedSlot = ingredientIds.findIndex((id) => id === item.id)
+    if (currentlyLoadedSlot >= 0 && !ingredientSlot) {
+      clearIngredientSlot(currentlyLoadedSlot as 0 | 1)
+    }
+
     if (ingredientSlot && item.kind === 'ingredient') {
+      const workspaceBounds = workspaceRef.current?.getBoundingClientRect()
+      const slotBounds = ingredientSlot.getBoundingClientRect()
+      if (workspaceBounds) {
+        const snappedPosition = {
+          x: clamp(
+            ((slotBounds.left + slotBounds.width / 2 - workspaceBounds.left) / workspaceBounds.width) * 100,
+            3,
+            97,
+          ),
+          y: clamp(
+            ((slotBounds.top + slotBounds.height / 2 - workspaceBounds.top) / workspaceBounds.height) * 100,
+            4,
+            96,
+          ),
+        }
+        const next = moveInventoryItem(saveRef.current ?? save, item.id, snappedPosition)
+        commit(next)
+      }
       loadIngredient(Number(ingredientSlot.dataset.ingredientSlot) as 0 | 1, item)
     } else if (memberCard && item.kind === 'potion') {
       handleUsePotion(memberCard.dataset.memberId ?? '', item)
-    } else if (sellSlot && item.kind === 'potion') {
-      setSelectedId(item.id)
-      handleSell(item)
     } else {
       if (saveRef.current) void saveGame(saveRef.current)
     }
@@ -320,7 +348,7 @@ export function GameScreen({ onReturn }: GameScreenProps) {
               .sort((a, b) => a.formation - b.formation)
               .map((member) => (
                 <article key={member.id}>
-                  <img src={CHARACTER_SPRITES[member.classId]} alt="" />
+                  <img className="character-sprite" src={CHARACTER_SPRITES[member.classId]} alt="" />
                   <strong>{member.name}</strong>
                   <span>{member.stats.health} HP</span>
                 </article>
@@ -379,6 +407,7 @@ export function GameScreen({ onReturn }: GameScreenProps) {
               commit(swapFormation(save, memberId, formation))
             }
             onUsePotion={handleUsePotion}
+            onOpenInfo={setInfoMemberId}
           />
           <nav className="mockup-utility" aria-label="Game menu">
             <button type="button" onClick={() => setRecipeBookOpen(true)}>Recipes</button>
@@ -389,13 +418,13 @@ export function GameScreen({ onReturn }: GameScreenProps) {
         <div className="mockup-bottom-row">
           <BrewingStation
             ingredients={loadedIngredients}
+            slotStates={slotStates}
             previewKnown={Boolean(previewKnown)}
-            previewName={previewRecipe?.name}
+            previewName={previewRecipe && catalog ? catalog.potionLabel(previewRecipe.id) : undefined}
             onBrew={handleBrew}
             onLoadIngredient={loadIngredient}
           />
           <ShopPanel
-            canSell={selectedItem?.kind === 'potion'}
             gold={save.gold}
             offers={save.shopOffers.map((id) => ({
               id,
@@ -405,22 +434,24 @@ export function GameScreen({ onReturn }: GameScreenProps) {
             onPurchase={handlePurchase}
             onRefresh={handleRefresh}
             onSelectOffer={setSelectedOffer}
-            onSell={() => handleSell()}
           />
         </div>
-
-        <p className="visually-hidden" aria-live="polite">{message}</p>
 
         <section className="loose-item-layer" aria-label="Laboratory inventory">
         {save.inventory.map((item) => {
           const ingredient = item.kind === 'ingredient'
             ? catalog?.ingredient(item.definitionId)
             : undefined
+          const label =
+            item.kind === 'potion'
+              ? catalog?.potionLabel(item.definitionId) ?? 'Unknown'
+              : item.name
           return (
             <button
-              aria-label={`${item.name} ${item.kind}`}
+              aria-label={`${label} ${item.kind}`}
               aria-pressed={selectedId === item.id}
               className={`loose-item loose-item--${item.kind}`}
+              data-tooltip={label}
               key={item.id}
               type="button"
               style={{ left: `${item.position.x}%`, top: `${item.position.y}%` }}
@@ -458,7 +489,6 @@ export function GameScreen({ onReturn }: GameScreenProps) {
           <div className="recipe-layout">
             <nav aria-label="Discovered recipes">
               {save.discoveredRecipeIds.length ? save.discoveredRecipeIds.map((id) => {
-                const recipe = catalog?.potion(id)
                 return (
                   <button
                     key={id}
@@ -470,7 +500,7 @@ export function GameScreen({ onReturn }: GameScreenProps) {
                       handleQuickBrew(id)
                     }}
                   >
-                    {recipe?.name ?? id}
+                    {catalog?.potionLabel(id) ?? id}
                   </button>
                 )
               }) : <p>No recipes discovered yet.</p>}
@@ -478,20 +508,79 @@ export function GameScreen({ onReturn }: GameScreenProps) {
             <article>
               {selectedRecipe ? (
                 <>
-                  <h3>{selectedRecipe.name}</h3>
-                  <p>{catalog?.ingredient(selectedRecipe.ingredientA)?.name} + {catalog?.ingredient(selectedRecipe.ingredientB)?.name}</p>
+                  <h3>
+                    {catalog?.ingredient(selectedRecipe.baseIngredientId)?.name} + {catalog?.ingredient(selectedRecipe.modifierIngredientId)?.name}
+                  </h3>
                   <p>{selectedRecipe.description}</p>
-                  <strong>{selectedRecipe.benefit}</strong>
-                  <p>
-                    Sale value: {save.knownSaleRecipeIds.includes(selectedRecipe.id)
-                      ? `${selectedRecipe.saleGold} Gold`
-                      : '???'}
-                  </p>
+                  <strong>
+                    {selectedRecipe.isPassive
+                      ? `Passive — ${selectedRecipe.trigger}: ${selectedRecipe.effectText}`
+                      : selectedRecipe.effectText}
+                  </strong>
                   <button type="button" onClick={() => handleQuickBrew(selectedRecipe.id)}>Quick Brew</button>
                 </>
               ) : <p>Select a recipe. Right-click one to Quick Brew.</p>}
             </article>
           </div>
+          </section>
+        )}
+
+        {infoMember && (
+          <section
+            className="party-member-modal"
+            role="dialog"
+            aria-labelledby="party-member-title"
+          >
+            <header>
+              <div>
+                <p>Adventurer details</p>
+                <h2 id="party-member-title">{infoMember.name}</h2>
+              </div>
+              <button type="button" onClick={() => setInfoMemberId(null)}>Close</button>
+            </header>
+            <div className="party-member-layout">
+              <img
+                className="character-sprite"
+                alt=""
+                draggable="false"
+                src={CHARACTER_SPRITES[infoMember.classId]}
+              />
+              <dl className="party-member-stats">
+                <div><dt>Class</dt><dd>{infoClass?.name ?? infoMember.classId}</dd></div>
+                <div><dt>Health</dt><dd>{infoMember.stats.health} / {infoMember.stats.maxHealth}</dd></div>
+                <div><dt>Attack</dt><dd>{infoMember.stats.attack}</dd></div>
+                <div><dt>Magic</dt><dd>{infoMember.stats.magic}</dd></div>
+                <div><dt>Speed</dt><dd>{infoMember.stats.speed}</dd></div>
+                <div><dt>Luck</dt><dd>{infoMember.stats.luck}</dd></div>
+              </dl>
+            </div>
+            {infoClass?.description && <p className="party-member-description">{infoClass.description}</p>}
+            <article className="party-member-section">
+              <h3>Class Ability</h3>
+              {infoClass?.classAbility ? (
+                <p>
+                  {infoClass.classAbility.isPassive
+                    ? `${infoClass.classAbility.trigger} ${infoClass.classAbility.effectText}`
+                    : infoClass.classAbility.effectText}
+                </p>
+              ) : (
+                <p>None.</p>
+              )}
+            </article>
+            <article className="party-member-section">
+              <h3>Passive Abilities ({infoPassives.length}/2)</h3>
+              {infoPassives.length ? (
+                <ul>
+                  {infoPassives.map((potion) => (
+                    <li key={potion.id}>
+                      <strong>{(potion.trigger ?? 'Passive').toUpperCase()} :</strong> {potion.effectText}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No passive potions consumed yet.</p>
+              )}
+            </article>
           </section>
         )}
       </div>

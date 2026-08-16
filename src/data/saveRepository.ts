@@ -37,7 +37,6 @@ const newSave = (slot: SaveSlotId): SaveRecord => ({
   inventory: [],
   party: createStartingParty(),
   discoveredRecipeIds: [],
-  knownSaleRecipeIds: [],
   shopOffers: [],
   battlesWon: 0,
   pendingReward: null,
@@ -63,22 +62,60 @@ export async function saveGame(save: SaveRecord): Promise<void> {
   await db.saves.put({ ...save, lastPlayedAt: now() })
 }
 
-const shuffledOffers = (
+/** Rarer ingredients should appear less often in the shop. */
+const RARITY_WEIGHT: Record<string, number> = { I: 3, II: 2, III: 1 }
+
+/** Left 2 shop slots are Base ingredients, right 3 are Modifier ingredients. */
+const SHOP_SLOT_KIND: readonly ('base' | 'modifier')[] = [
+  'base',
+  'base',
+  'modifier',
+  'modifier',
+  'modifier',
+]
+
+const shuffledOffersOfKind = (
   catalog: GameDataCatalog,
+  kind: 'base' | 'modifier',
   excluded: readonly string[] = [],
-  count = 5,
+  count = 1,
 ) => {
-  const available = catalog.ingredients.filter((item) => item.gold > 0)
+  const available = catalog.ingredients.filter(
+    (item) => item.gold > 0 && item.kind === kind,
+  )
   if (!available.length) return []
-  const start = Math.floor(Math.random() * available.length)
-  const rotated = [...available.slice(start), ...available.slice(0, start)]
+  const weighted = available.flatMap((item) =>
+    Array(RARITY_WEIGHT[item.rarity] ?? 1).fill(item),
+  )
+  const start = Math.floor(Math.random() * weighted.length)
+  const rotated = [...weighted.slice(start), ...weighted.slice(0, start)]
   const prioritized = [
     ...rotated.filter((item) => !excluded.includes(item.id)),
     ...rotated.filter((item) => excluded.includes(item.id)),
   ]
-  return Array.from({ length: Math.min(count, available.length) }, (_, index) =>
-    prioritized[index % prioritized.length].id,
-  )
+  const offers: string[] = []
+  for (const item of prioritized) {
+    if (offers.length >= count) break
+    if (!offers.includes(item.id)) offers.push(item.id)
+  }
+  let index = 0
+  while (offers.length < Math.min(count, available.length) && index < prioritized.length) {
+    if (!offers.includes(prioritized[index].id)) offers.push(prioritized[index].id)
+    index += 1
+  }
+  return offers
+}
+
+const shuffledOffers = (
+  catalog: GameDataCatalog,
+  excluded: readonly string[] = [],
+): string[] => {
+  const offers: string[] = []
+  for (const kind of SHOP_SLOT_KIND) {
+    const [pick] = shuffledOffersOfKind(catalog, kind, [...excluded, ...offers], 1)
+    if (pick) offers.push(pick)
+  }
+  return offers
 }
 
 export function synchronizeGameData(
@@ -105,7 +142,11 @@ export function synchronizeGameData(
     inventory,
     shopOffers:
       save.shopOffers.length === 5 &&
-      save.shopOffers.every((id) => validIngredients.has(id))
+      save.shopOffers.every(
+        (id, index) =>
+          validIngredients.has(id) &&
+          catalog.ingredient(id)?.kind === SHOP_SLOT_KIND[index],
+      )
         ? save.shopOffers
         : shuffledOffers(catalog),
   }
@@ -120,7 +161,9 @@ export function purchaseOffer(
   const ingredient = catalog.ingredient(save.shopOffers[offerIndex] ?? '')
   if (!ingredient || ingredient.gold <= 0) throw new Error('That offer is unavailable.')
   if (save.gold < ingredient.gold) throw new Error('There is not enough Gold.')
-  const replacement = shuffledOffers(catalog, save.shopOffers, 1)[0] ?? ingredient.id
+  const slotKind = SHOP_SLOT_KIND[offerIndex] ?? ingredient.kind
+  const replacement =
+    shuffledOffersOfKind(catalog, slotKind, save.shopOffers, 1)[0] ?? ingredient.id
   const offers = [...save.shopOffers]
   offers[offerIndex] = replacement
   const itemCount = save.inventory.length
@@ -185,7 +228,9 @@ export function brewRecipe(
     ingredients[0].definitionId,
     ingredients[1].definitionId,
   )
-  if (!recipe) throw new Error('Those ingredients do not produce a known potion.')
+  if (!recipe) {
+    throw new Error('A potion needs exactly one Base ingredient and one Modifier ingredient.')
+  }
   const consumed = new Set(ingredientIds)
   return {
     ...save,
@@ -204,35 +249,52 @@ export function quickBrewIngredients(
   recipe: PotionDefinition,
 ): [string, string] | null {
   const first = save.inventory.find(
-    (item) => item.kind === 'ingredient' && item.definitionId === recipe.ingredientA,
+    (item) => item.kind === 'ingredient' && item.definitionId === recipe.baseIngredientId,
   )
   const second = save.inventory.find(
     (item) =>
       item.kind === 'ingredient' &&
-      item.definitionId === recipe.ingredientB &&
+      item.definitionId === recipe.modifierIngredientId &&
       item.id !== first?.id,
   )
   return first && second ? [first.id, second.id] : null
 }
 
-export function sellPotion(
-  save: SaveRecord,
-  catalog: GameDataCatalog,
-  itemId: string,
-): SaveRecord {
-  const potionItem = save.inventory.find(
-    (item) => item.id === itemId && item.kind === 'potion',
-  )
-  const potion = potionItem ? catalog.potion(potionItem.definitionId) : undefined
-  if (!potionItem || !potion) throw new Error('Only a potion can be sold.')
-  return {
-    ...save,
-    gold: save.gold + potion.saleGold,
-    inventory: save.inventory.filter((item) => item.id !== itemId),
-    knownSaleRecipeIds: save.knownSaleRecipeIds.includes(potion.id)
-      ? save.knownSaleRecipeIds
-      : [...save.knownSaleRecipeIds, potion.id],
+/** Very small parser for the ~70% of one-time (non-passive) effect cells that
+ * follow a simple "+N STAT" or "Increase STAT +N" pattern. Anything else is
+ * left unrecognized for now — full free-text execution is a later phase. */
+const STAT_FIELD: Record<string, keyof PartyMember['stats']> = {
+  AGI: 'speed',
+  STR: 'attack',
+  MAG: 'magic',
+  LUK: 'luck',
+  HP: 'maxHealth',
+}
+
+interface OneTimeEffect {
+  statField?: keyof PartyMember['stats']
+  statAmount?: number
+  gold?: number
+  kill?: boolean
+  unrecognized?: boolean
+}
+
+function parseOneTimeEffect(effectText: string): OneTimeEffect {
+  const value = effectText.trim()
+  if (/^die$/i.test(value)) return { kill: true }
+  const goldMatch = value.match(/^Receive (\d+) Gold$/i)
+  if (goldMatch) return { gold: Number(goldMatch[1]) }
+  const statFirst = value.match(/^Increase\s+(AGI|STR|MAG|LUK|HP)\s*\+?(\d+)%?$/i)
+  const numberFirst = value.match(/^\+(\d+)%?\s*(AGI|STR|MAG|LUK|HP)$/i)
+  const match = statFirst ?? numberFirst
+  if (match) {
+    const [, first, second] = match
+    const stat = (statFirst ? first : second).toUpperCase()
+    const amount = Number(statFirst ? second : first)
+    const statField = STAT_FIELD[stat]
+    if (statField) return { statField, statAmount: amount }
   }
+  return { unrecognized: true }
 }
 
 export function usePotion(
@@ -246,21 +308,41 @@ export function usePotion(
   )
   const potion = potionItem ? catalog.potion(potionItem.definitionId) : undefined
   if (!potionItem || !potion) throw new Error('Only a potion can be used.')
-  const party = save.party.map((member) => {
-    if (member.id !== memberId) return member
-    const stats = { ...member.stats }
-    if (potion.benefitType === 'heal') {
-      stats.health = Math.min(stats.maxHealth, stats.health + potion.benefitValue)
-    } else if (potion.benefitType === 'max-health') {
-      stats.maxHealth += potion.benefitValue
-      stats.health += potion.benefitValue
-    } else if (potion.benefitType === 'attack') stats.attack += potion.benefitValue
-    else if (potion.benefitType === 'speed') stats.speed += potion.benefitValue
-    else stats.luck += potion.benefitValue
-    return { ...member, stats }
+  const member = save.party.find((entry) => entry.id === memberId)
+  if (!member) throw new Error('That party member could not be found.')
+
+  if (potion.isPassive) {
+    if (member.passivePotionAbilityIds.includes(potion.id)) {
+      throw new Error(`${member.name} already has that passive ability.`)
+    }
+    if (member.passivePotionAbilityIds.length >= 2) {
+      throw new Error(`${member.name} already knows two passive potion abilities.`)
+    }
+    return {
+      ...save,
+      party: save.party.map((entry) =>
+        entry.id === memberId
+          ? { ...entry, passivePotionAbilityIds: [...entry.passivePotionAbilityIds, potion.id] }
+          : entry,
+      ),
+      inventory: save.inventory.filter((item) => item.id !== itemId),
+    }
+  }
+
+  const effect = parseOneTimeEffect(potion.effectText)
+  const party = save.party.map((entry) => {
+    if (entry.id !== memberId) return entry
+    const stats = { ...entry.stats }
+    if (effect.statField && effect.statAmount) {
+      stats[effect.statField] += effect.statAmount
+      if (effect.statField === 'maxHealth') stats.health += effect.statAmount
+    }
+    if (effect.kill) stats.health = 0
+    return { ...entry, stats }
   })
   return {
     ...save,
+    gold: save.gold + (effect.gold ?? 0),
     party,
     inventory: save.inventory.filter((item) => item.id !== itemId),
   }

@@ -98,7 +98,7 @@ export function TitleScreen({ saves, isOpening, onSelect }: TitleScreenProps) {
           {PARTY_SPRITES.map((character) => (
             <figure key={character.name}>
               <div className="sprite-frame">
-                <img src={character.src} alt="" />
+              <img className="character-sprite" src={character.src} alt="" />
               </div>
               <figcaption>{character.name}</figcaption>
             </figure>
